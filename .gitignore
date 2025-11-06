@@ -62,3 +62,4 @@ greenhorn_nav/greenhorn_nav/utils/lpa_helpers2.py
 greenhorn_nav/greenhorn_nav/local_goal_selector2.py
 greenhorn_nav/greenhorn_nav/local_goal_visualizer2.py
 greenhorn_nav/greenhorn_nav/utils/local_visualizer_old.py
+greenhorn_nav/greenhorn_nav/lpa_planner_node2.py
