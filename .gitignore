@@ -1,0 +1,58 @@
+# =========================
+# Python build / cache
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+*.log
+
+# =========================
+# ROS 2 package artifacts
+# =========================
+# (colcon creates these in the workspace root, not here, but just in case)
+build/
+install/
+log/
+.colcon/
+.colcon_install_layout
+ament_index/
+
+# =========================
+# Editor / IDE files
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Project specific
+# =========================
+# Simulation, visualization, or temporary files
+demo/__pycache__/
+demo/*.log
+demo/*.csv
+demo/*.mp4
+demo/*.png
+demo/*.jpg
+demo/*.jpeg
+
+# Map / config / temp data
+maps/
+tmp/
+data/
+config/local_*.yaml
+config/test_*.yaml
+
+# Ignore local testing nodes (if not tracked)
+demo/test_*

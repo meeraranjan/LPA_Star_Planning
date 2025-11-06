@@ -1,0 +1,19 @@
+lpa_planner_node:
+  ros__parameters:
+    map_topic: "/map"
+    local_goal_topic: "/local_goal"
+    boat_pose_topic: "/boat_pose"
+    local_path_topic: "/local_path"
+    frame_id: "map"
+
+    inflation_radius: 0.15
+    cycle_hz: 5.0                 # main loop rate
+    planner_heuristic: "euclidean"
+
+    smoothing_enabled: true
+    smoothing_factor: 0.6
+    smoothing_min_points: 5
+    smoothing_max_points: 30
+
+    max_extraction_iters: 20000
+    qos_depth: 10
