@@ -1,4 +1,4 @@
-# local_goal_visualizer_pygame.py
+# local_goal_visualizer.py
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
@@ -63,9 +63,16 @@ class PygameVisualizer(Node):
         with self.data_lock:
             data = np.array(msg.data)
             if len(data) >= 4:
-                n_each = len(data) // 4
-                self.red_buoys = [(data[i*2], data[i*2+1]) for i in range(n_each)]
-                self.green_buoys = [(data[n_each*2 + i*2], data[n_each*2 + i*2 + 1]) for i in range(n_each)]
+                n_gates = len(data) // 4
+                self.red_buoys = []
+                self.green_buoys = []
+                for i in range(n_gates):
+                    r_x = data[4*i + 0]
+                    r_y = data[4*i + 1]
+                    g_x = data[4*i + 2]
+                    g_y = data[4*i + 3]
+                    self.red_buoys.append((r_x, r_y))
+                    self.green_buoys.append((g_x, g_y))
             else:
                 self.red_buoys = []
                 self.green_buoys = []
