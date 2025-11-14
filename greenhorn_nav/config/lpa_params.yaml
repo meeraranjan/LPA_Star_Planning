@@ -1,19 +1,38 @@
 lpa_planner_node:
   ros__parameters:
+    # Topic names
     map_topic: "/map"
-    local_goal_topic: "/local_goal"
+    gate_midpoints_topic: "/gate_midpoints"  
     boat_pose_topic: "/boat_pose"
     local_path_topic: "/local_path"
     frame_id: "map"
 
-    inflation_radius: 0.15
-    cycle_hz: 5.0                 # main loop rate
-    planner_heuristic: "euclidean"
+    # Obstacle inflation
+    inflation_radius: 0.15 
 
+    # Planning cycle rate
+    cycle_hz: 5.0  
+
+    # Heuristic function
+    planner_heuristic: "euclidean"  # Options: "euclidean", "manhattan"
+
+    # Path smoothing parameters
     smoothing_enabled: true
-    smoothing_factor: 0.6
+    smoothing_factor: 0.6  # 0.0 = no smoothing, 1.0 = maximum smoothing
     smoothing_min_points: 5
     smoothing_max_points: 30
 
-    max_extraction_iters: 20000
+    # Planning horizon parameters 
+    planning_horizon_distance: 15.0  # meters - plan this far ahead
+    min_gates_ahead: 1  # Always plan at least this many gates
+    max_gates_ahead: 3  # Never plan more than this many gates
+
+    # Blocked gate handling 
+    blocked_gate_retry_limit: 3  # How many cycles to retry before skipping gate
+    allow_gate_skipping: true  # Allow skipping blocked gates. Have not implemented non-gate-skipping logic yet
+
+    # Path extraction
+    max_extraction_iters: 20000  # Maximum iterations for path extraction
+
+    # QoS settings
     qos_depth: 10
