@@ -9,69 +9,62 @@ class LocalMapPublisher(Node):
     def __init__(self):
         super().__init__('local_map_publisher')
 
-        # Subscriptions
-        self.create_subscription(Float32MultiArray, '/buoy_locations', self.buoy_callback, 10)
-        
-        # Map publisher
+        # Subscribers
+        self.create_subscription(Float32MultiArray, '/red_buoys', self.red_callback, 10)
+        self.create_subscription(Float32MultiArray, '/green_buoys', self.green_callback, 10)
+        self.create_subscription(Float32MultiArray, '/dynamic_obstacle', self.dynamic_obstacle_callback, 10)
+
+        # Publisher
         self.map_pub = self.create_publisher(OccupancyGrid, '/map', 10)
 
-        # Map parameters
+        # Map config
         self.map_width = 100
         self.map_height = 100
         self.map_resolution = 0.1  # meters per cell
-        self.origin = [0.0, 0.0]   # bottom-left corner in world coordinates
+        self.origin = [0.0, 0.0]
 
+        # Internal state
         self.red_buoys = []
         self.green_buoys = []
-        self.dynamic_obstacles = []  # list of (x, y) tuples
+        self.dynamic_obstacles = []
 
-        self.create_subscription(Float32MultiArray, '/dynamic_obstacle', self.dynamic_obstacle_callback, 10)
-        # Timer to periodically publish map
+        # Timer
         self.create_timer(0.1, self.publish_map)
 
-    #Callbacks
-    def buoy_callback(self, msg):
-        if msg.data:
-            data = np.array(msg.data)
-            n_each = len(data) // 4  # Half red, half green
-            self.red_buoys = [(data[i*2], data[i*2+1]) for i in range(n_each)]
-            self.green_buoys = [(data[n_each*2 + i*2], data[n_each*2 + i*2 + 1]) for i in range(n_each)]
-        else:
-            self.red_buoys = []
-            self.green_buoys = []
+    # ------------------ Callbacks ------------------
+    def red_callback(self, msg):
+        """Parse incoming red buoys: [x0, y0, x1, y1, ...]"""
+        arr = msg.data
+        n = len(arr) // 2
+        self.red_buoys = [(arr[2*i], arr[2*i+1]) for i in range(n)]
+
+    def green_callback(self, msg):
+        """Parse incoming green buoys: [x0, y0, x1, y1, ...]"""
+        arr = msg.data
+        n = len(arr) // 2
+        self.green_buoys = [(arr[2*i], arr[2*i+1]) for i in range(n)]
+
     def dynamic_obstacle_callback(self, msg):
-        if msg.data and len(msg.data) >= 2:
+        if len(msg.data) >= 2:
             x, y = msg.data[:2]
             self.dynamic_obstacles.append((x, y))
             self.get_logger().info(f"Added dynamic obstacle at ({x:.2f}, {y:.2f})")
-    # Map Publishing 
+
+    # ------------------ Publish map ------------------
     def publish_map(self):
         grid = np.zeros((self.map_height, self.map_width), dtype=np.int8)
-        num_occupied = 0
-        # Mark buoys as obstacles
-        for x, y in self.red_buoys + self.green_buoys:
-            # Convert world coordinates to grid indices
-            # j is column (x-direction), i is row (y-direction)
+
+        # Mark buoys
+        for x, y in self.red_buoys + self.green_buoys + self.dynamic_obstacles:
             j = int((x - self.origin[0]) / self.map_resolution)
             i = int((y - self.origin[1]) / self.map_resolution)
-            
-            if 0 <= i < self.map_height and 0 <= j < self.map_width:
-                grid[i, j] = 100  # occupied
-                num_occupied += 1
-            else:
-                self.get_logger().warn(f"Buoy at ({x}, {y}) -> grid ({i}, {j}) is out of bounds!")
-        for x, y in self.dynamic_obstacles:
-            j = int((x - self.origin[0]) / self.map_resolution)
-            i = int((y - self.origin[1]) / self.map_resolution)
-            
-            if 0 <= i < self.map_height and 0 <= j < self.map_width:
-                grid[i, j] = 100  # occupied
-            else:
-                self.get_logger().warn(f"Dynamic obstacle at ({x}, {y}) -> grid ({i}, {j}) is out of bounds!")
-        # if num_occupied > 0:
-        #     self.get_logger().info(f"Publishing map with {num_occupied} occupied cells")
 
+            if 0 <= i < self.map_height and 0 <= j < self.map_width:
+                grid[i, j] = 100
+            else:
+                self.get_logger().warn(f"Point ({x:.2f}, {y:.2f}) -> grid ({i}, {j}) out of bounds!")
 
+        # Build OccupancyGrid message
         msg = OccupancyGrid()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "map"
