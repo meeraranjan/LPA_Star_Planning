@@ -37,12 +37,18 @@ def generate_launch_description():
         ),
         launch_arguments={'params_file': params_file}.items()
     )
-    
+    declare_lgs_params_cmd = DeclareLaunchArgument(
+        'local_goal_selector',
+        default_value=os.path.join(pkg_share, 'config', 'local_goal_selector.yaml'),
+        description='Path to the local goal selector parameter file'
+    )   
+    local_goal_selector = LaunchConfiguration('local_goal_selector')
     local_goal_selector_node = Node(
         package='greenhorn_nav',
         executable='local_goal_selector',
         name='local_goal_selector',
-        output='screen'
+        output='screen',
+        parameters=[LaunchConfiguration('local_goal_selector')]
     )
 
     map_publisher_node = Node(
@@ -70,6 +76,7 @@ def generate_launch_description():
     # --- Final launch description ---
     return LaunchDescription([
         declare_params_file_cmd,
+        declare_lgs_params_cmd,
         lpa_planner_launch,
         map_publisher_node,
         local_goal_selector_node,
