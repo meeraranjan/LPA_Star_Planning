@@ -1,0 +1,11 @@
+local_goal_selector:
+  ros__parameters:
+    red_buoys_topic: "/red_buoys"
+    green_buoys_topic: "/green_buoys"
+    boat_pose_topic: "/boat_pose"
+    max_gate_match_distance: 5.0
+    unpaired_red_offset: 1.0
+    unpaired_green_offset: 1.0
+
+    update_rate_hz: 2.0
+    waypoint_pass_tol: 0.07
