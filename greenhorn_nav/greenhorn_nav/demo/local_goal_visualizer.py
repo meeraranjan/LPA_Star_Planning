@@ -34,7 +34,8 @@ class PygameVisualizer(Node):
 
         # Subscriptions
         self.create_subscription(OccupancyGrid, '/inflated_map', self.map_callback, 10)
-        self.create_subscription(Float32MultiArray, '/buoy_locations', self.buoy_callback, 10)
+        self.create_subscription(Float32MultiArray, '/green_buoys', self.green_buoys_callback, 10)
+        self.create_subscription(Float32MultiArray, '/red_buoys', self.red_buoys_callback, 10)
         self.create_subscription(Float32MultiArray, '/gate_midpoints', self.midpoints_callback, 10)
         self.create_subscription(Float32MultiArray, '/boat_pose', self.pose_callback, 10)
         self.create_subscription(PoseStamped, '/local_goal', self.goal_callback, 10)
@@ -59,22 +60,25 @@ class PygameVisualizer(Node):
             self.map_data = np.array(msg.data, dtype=np.int8).reshape((height, width))
             occupied_count = np.sum(self.map_data > 50)
 
-    def buoy_callback(self, msg):
+    def red_buoys_callback(self, msg: Float32MultiArray):
         with self.data_lock:
             data = np.array(msg.data)
-            if len(data) >= 4:
-                n_gates = len(data) // 4
-                self.red_buoys = []
-                self.green_buoys = []
-                for i in range(n_gates):
-                    r_x = data[4*i + 0]
-                    r_y = data[4*i + 1]
-                    g_x = data[4*i + 2]
-                    g_y = data[4*i + 3]
-                    self.red_buoys.append((r_x, r_y))
-                    self.green_buoys.append((g_x, g_y))
+            # Expect [x1, y1, x2, y2, ...]
+            if len(data) % 2 == 0:
+                self.red_buoys = [(data[i], data[i+1]) for i in range(0, len(data), 2)]
             else:
+                self.get_logger().warn("Received malformed red buoy array")
                 self.red_buoys = []
+
+
+    def green_buoys_callback(self, msg: Float32MultiArray):
+        with self.data_lock:
+            data = np.array(msg.data)
+            # Expect [x1, y1, x2, y2, ...]
+            if len(data) % 2 == 0:
+                self.green_buoys = [(data[i], data[i+1]) for i in range(0, len(data), 2)]
+            else:
+                self.get_logger().warn("Received malformed green buoy array")
                 self.green_buoys = []
 
     def midpoints_callback(self, msg):
