@@ -56,12 +56,13 @@ class LPAPlannerNode(Node):
         self.declare_parameter('planning_horizon_distance', 15.0)  # meters - plan this far ahead
         self.declare_parameter('min_gates_ahead', 1)  # Always plan at least this many gates
         self.declare_parameter('max_gates_ahead', 4)  # Never plan more than this many gates
-        self.declare_parameter('blocked_gate_retry_limit', 3)  # How many cycles to retry before skipping
+        self.declare_parameter('blocked_gate_retry_limit', 5)  # How many cycles to retry before skipping
         self.declare_parameter('allow_gate_skipping', True)  # Allow skipping blocked gates
         
-        self.declare_parameter('gate_passed_proximity_threshold', 0.5)  # meters
+        self.declare_parameter('gate_passed_proximity_threshold', 1.5)  # meters - increased from 0.5
         self.declare_parameter('cell_occupied_threshold', 50)          # occupancy threshold
         self.declare_parameter('smoothing_multiplier', 2)         # factor for num_points
+        
         # QoS and topics
         qos_depth = int(self.get_parameter('qos_depth').value)
         qos = QoSProfile(
@@ -107,9 +108,7 @@ class LPAPlannerNode(Node):
         self.current_gate_idx: int = 0  # Which gate we're currently heading to
         self.gate_blocked_count: dict = {}  # Track how many times each gate has been blocked
         self.skipped_gates: set = set()  # Gates we've decided to skip
-        self.gate_blocked_count: dict = {}  # Track how many times each gate has been blocked
-        self.last_start: Optional[MapIndex] = None
-        self.current_gate_idx: int = 0  # Which gate we're currently heading to
+        self.passed_gates: set = set()  # Gates we've actually passed (behind us)
 
         # Timer according to cycle_hz
         cycle_hz = float(self.get_parameter('cycle_hz').value)
@@ -161,8 +160,6 @@ class LPAPlannerNode(Node):
             if self.prev_inflated is not None:
                 changed = detect_changed_cells(self.prev_inflated, new_inflated)
                 if changed:
-                    self.get_logger().info(f"*** MAP CHANGED IN CALLBACK: {len(changed)} cells affected ***")
-                    
                     # Update inflated map
                     self.inflated = new_inflated
                     
@@ -171,15 +168,12 @@ class LPAPlannerNode(Node):
                         if lpa is not None:
                             lpa.grid = self.inflated
                             for cell in changed:
-                                old_val = self.prev_inflated[cell]
-                                new_val = self.inflated[cell]
                                 try:
                                     lpa.update_vertex(cell)
                                     for nbr in lpa.neighbors(cell):
                                         lpa.update_vertex(nbr)
                                 except Exception as ex:
                                     self.get_logger().error(f"update_vertex failed for gate {gate_idx}, cell {cell}: {ex}")
-                            self.get_logger().info(f"  Updated LPA* instance for gate {gate_idx} in callback")
                 else:
                     self.inflated = new_inflated
             else:
@@ -205,10 +199,24 @@ class LPAPlannerNode(Node):
             
             # Only update if changed
             if new_midpoints != self.gate_midpoints:
+                old_count = len(self.gate_midpoints)
                 self.gate_midpoints = new_midpoints
+                
+                # If gates decreased (buoys were filtered out), reset state
+                if len(new_midpoints) < old_count:
+                    self.get_logger().info(f"Gate count decreased from {old_count} to {len(new_midpoints)} - resetting planner state")
+                    # Reset to target the first available gate
+                    self.current_gate_idx = 0
+                    self.passed_gates.clear()
+                    self.skipped_gates.clear()
+                    self.gate_blocked_count.clear()
+                # If current gate index is now out of bounds, clamp it
+                elif self.current_gate_idx >= len(self.gate_midpoints):
+                    self.get_logger().warn(f"Current gate index {self.current_gate_idx} out of bounds, clamping to {len(self.gate_midpoints) - 1}")
+                    self.current_gate_idx = max(0, len(self.gate_midpoints) - 1)
+                
                 # Reset LPA instances when gates change
                 self.lpa_instances = [None] * len(self.gate_midpoints)
-                self.get_logger().info(f"Received {len(self.gate_midpoints)} gate midpoints")
                 
         except Exception as ex:
             self.get_logger().error(f"midpoints_cb failed: {ex}")
@@ -284,12 +292,21 @@ class LPAPlannerNode(Node):
             return
         start = (int(start[0]), int(start[1]))
 
-        # Determine which gate we're currently targeting
-        self._update_current_gate_index()
+        # Ensure current_gate_idx is within bounds
+        if self.current_gate_idx >= len(self.gate_midpoints):
+            self.current_gate_idx = max(0, len(self.gate_midpoints) - 1)
+
+        # Update which gates we've passed (ONLY check if we're BEHIND them)
+        self._update_passed_gates()
         
-        # Skip blocked gates if enabled
+        # Advance current gate index if we've passed it
+        while self.current_gate_idx in self.passed_gates and self.current_gate_idx < len(self.gate_midpoints) - 1:
+            self.get_logger().info(f"Gate {self.current_gate_idx} is behind us - advancing")
+            self.current_gate_idx += 1
+        
+        # Skip blocked gates if enabled (but don't skip gates we haven't tried yet)
         if self.allow_gate_skipping:
-            self._skip_blocked_gates()
+            self._skip_persistently_blocked_gates()
         
         # Determine which gates to plan through based on distance horizon
         end_gate_idx = self._compute_planning_horizon(start)
@@ -301,9 +318,9 @@ class LPAPlannerNode(Node):
         current_start = start
         
         for gate_idx in range(self.current_gate_idx, end_gate_idx + 1):
-            # Skip gates marked as blocked
-            if gate_idx in self.skipped_gates:
-                self.get_logger().info(f"Skipping blocked gate {gate_idx}")
+            # Skip gates marked as blocked or passed
+            if gate_idx in self.skipped_gates or gate_idx in self.passed_gates:
+                self.get_logger().debug(f"Skipping gate {gate_idx} (blocked or passed)")
                 continue
                 
             goal_world = self.gate_midpoints[gate_idx]
@@ -331,15 +348,18 @@ class LPAPlannerNode(Node):
                     )
                     self.skipped_gates.add(gate_idx)
                     
-                    # Try to advance to next gate
+                    # Only advance current gate if it's the one we're stuck on
                     if gate_idx == self.current_gate_idx:
-                        self.get_logger().info(f"Advancing to next gate due to blockage")
+                        self.get_logger().info(f"Advancing past blocked gate {gate_idx}")
                         self.current_gate_idx = min(gate_idx + 1, len(self.gate_midpoints) - 1)
+                        # Retry planning with new gate
+                        continue
                 
                 break
             
             # Reset blocked count on success
-            self.gate_blocked_count[gate_idx] = 0
+            if gate_idx in self.gate_blocked_count:
+                self.gate_blocked_count[gate_idx] = 0
             
             # Add to full path (avoid duplicate points at segment boundaries)
             if full_path and segment_path:
@@ -369,45 +389,48 @@ class LPAPlannerNode(Node):
             self.get_logger().warn(f"smoothing failed: {ex}")
             smooth = full_path
 
-        self.get_logger().info(f"Publishing path through gates {self.current_gate_idx} to {end_gate_idx} with {len(smooth)} waypoints")
         self._publish_path(smooth)
 
-    def _update_current_gate_index(self):
-        """Update which gate we're currently heading toward based on proximity."""
+    def _update_passed_gates(self):
+        """Mark gates as passed if the boat is BEHIND them (not just close)."""
         if not self.boat_pose or not self.gate_midpoints:
             return
         
         boat_pos = np.array(self.boat_pose)
         
-        # Check if we're close to current gate, if so advance
-        if self.current_gate_idx < len(self.gate_midpoints):
-            current_gate_pos = np.array(self.gate_midpoints[self.current_gate_idx])
-            dist = np.linalg.norm(boat_pos - current_gate_pos)
+        for gate_idx in range(len(self.gate_midpoints)):
+            if gate_idx in self.passed_gates:
+                continue  # Already marked as passed
             
-            # If close to current gate (within 0.5m), advance to next
-            if dist < self.gate_passed_proximity_threshold and self.current_gate_idx < len(self.gate_midpoints) - 1:
-                self.current_gate_idx += 1
-                self.get_logger().info(f"Advanced to gate {self.current_gate_idx}")
+            gate_pos = np.array(self.gate_midpoints[gate_idx])
+            
+            # Vector from boat to gate
+            to_gate = gate_pos - boat_pos
+            dist = np.linalg.norm(to_gate)
+            
+            # If very close, consider direction to next gate
+            if dist < self.gate_passed_proximity_threshold:
+                # Check if we're heading away from this gate toward the next
+                if gate_idx < len(self.gate_midpoints) - 1:
+                    next_gate_pos = np.array(self.gate_midpoints[gate_idx + 1])
+                    to_next = next_gate_pos - boat_pos
+                    
+                    # If we're closer to next gate than current, we've passed current
+                    dist_to_next = np.linalg.norm(to_next)
+                    if dist_to_next < dist:
+                        self.passed_gates.add(gate_idx)
+                        self.get_logger().info(f"Marked gate {gate_idx} as passed (closer to next gate)")
+                else:
+                    # Last gate - mark as passed if very close
+                    if dist < 0.3:
+                        self.passed_gates.add(gate_idx)
+                        self.get_logger().info(f"Marked final gate {gate_idx} as passed")
+
+    def _skip_persistently_blocked_gates(self):
+        """Only skip gates that have been blocked multiple times."""
+        # Don't automatically skip - let the blocked count logic handle it
+        pass
                 
-    def _is_gate_blocked(self, gate_idx: int) -> bool:
-        """Check if a gate midpoint is inside an obstacle."""
-        if gate_idx >= len(self.gate_midpoints):
-            return True
-        goal_world = self.gate_midpoints[gate_idx]
-        goal_map = self.world_to_map(goal_world)
-        if goal_map is None:
-            return True
-        i, j = goal_map
-        return self.inflated[i, j] > 0
-
-    def _skip_blocked_gates(self):
-        """Skip past any gates that are blocked."""
-        while (self.current_gate_idx < len(self.gate_midpoints) and
-            (self.current_gate_idx in self.skipped_gates or self._is_gate_blocked(self.current_gate_idx))):
-            self.get_logger().info(f"Skipping blocked gate {self.current_gate_idx}")
-            self.skipped_gates.add(self.current_gate_idx)
-            self.current_gate_idx += 1
-
     def _compute_planning_horizon(self, start: MapIndex) -> int:
         """Compute how many gates ahead to plan based on distance.
         
@@ -476,7 +499,6 @@ class LPAPlannerNode(Node):
         
         # Initialize or recreate LPA* if needed
         if lpa is None:
-            self.get_logger().info(f"Creating new LPA* instance for gate {gate_idx}")
             if not self._create_lpa_for_gate(start, goal, gate_idx):
                 return []
             lpa = self.lpa_instances[gate_idx]
