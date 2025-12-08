@@ -7,8 +7,7 @@ This project implements a dynamic path planning system for the RobotX Navigation
 The planner identifies gate pairs from buoy positions, computes optimal paths through the navigation channel, and provides local goal points for the boat to follow in real-time.
 
 ## Demo
-
-<video src="https://github.com/meeraranjan/LPA_Star_Planning/raw/main/demo_nav_channel.mp4" controls width="600"></video>
+![Navigation Channel Demo](demo_nav_channel.mp4)
 
 ## Key Components
 
