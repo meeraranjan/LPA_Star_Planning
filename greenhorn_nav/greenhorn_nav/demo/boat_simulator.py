@@ -42,7 +42,7 @@ class BoatSimulator(Node):
             # first path received
             self.path = new_path
             self.wp_index = 0
-            self.get_logger().info(f"Received initial path with {len(self.path)} waypoints.")
+            # self.get_logger().info(f"Received initial path with {len(self.path)} waypoints.")
             return
 
         # find closest point on new path to current position
@@ -55,7 +55,7 @@ class BoatSimulator(Node):
             self.wp_index = closest_index
 
         self.path = new_path
-        self.get_logger().info(f"Updated path, continuing from waypoint {self.wp_index}/{len(self.path)-1}")
+        # self.get_logger().info(f"Updated path, continuing from waypoint {self.wp_index}/{len(self.path)-1}")
 
     # ---------------- Main update loop ----------------
     def update(self):
