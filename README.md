@@ -7,7 +7,7 @@ This project implements a dynamic path planning system for the RobotX Navigation
 The planner identifies gate pairs from buoy positions, computes optimal paths through the navigation channel, and provides local goal points for the boat to follow in real-time.
 
 ## Demo
-![Navigation Channel Demo](https://youtube.com/shorts/vyo19bY0nTs?feature=share)
+[![Navigation Channel Demo](https://youtube.com/shorts/vyo19bY0nTs)
 
 ## Key Components
 
