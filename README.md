@@ -8,7 +8,7 @@ The planner identifies gate pairs from buoy positions, computes optimal paths th
 
 ## Demo
 
-<video src="demo_nav_channel.mp4" controls width="600"></video>
+<video src="https://github.com/meeraranjan/LPA_Star_Planning/raw/main/demo_nav_channel.mp4" controls width="600"></video>
 
 ## Key Components
 
